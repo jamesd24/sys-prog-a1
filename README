@@ -21,3 +21,9 @@ Milestone4
 	This funtion takes in a file name along with an array of arguments and replaces the current current
 	running process with the new process being executed with the file and arguments.
 	This function does not utilise the os shell and is much more powerful.
+	
+	cd
+	
+	cd is an internal shell command and cannot be called by exevp(). To change the current directory
+	a shell will need to use the chdir() function. This will change the current directory of the current
+	process and any child processes created after that. This will not effect the parent procces.
