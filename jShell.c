@@ -1,6 +1,7 @@
 /* ----------------------------------------------------------------- */
 /* Command Line Interface Program  jShell.c                          */
 /* ----------------------------------------------------------------- */
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,6 +10,8 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <libgen.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 /* Global Variables */
 int LINE_BUFFER = 512;
@@ -23,51 +26,53 @@ int parse_line(char *line);
 char* white_skip(char* str);
 char* find_last_arg();
 int find_last_arg_index();
-
+int read_source(char *str);
+int clear_args();
 
 /* Main Function Starts Here */
 int main(void)
 {
-	char line[LINE_BUFFER];
-   
-     printf("----------------------------------------\n");
-     printf("jShell: Simple CLI writen by James Dahms\n");
-     printf("----------------------------------------\n");
-     
-     while (*line != EOF) 
-     {  
+	char *line;
+	char prompt[100];
+
+	printf("----------------------------------------\n");
+	printf("jShell: Simple CLI writen by James Dahms\n");
+	printf("----------------------------------------\n");
+
+	while (*line != EOF) 
+	{  
 		//Get Current Dir
 		if (getcwd(currentdir, sizeof(currentdir)) != NULL) ;
 		else print_error(106,'\0'); 
-                  
-		printf("jShell@%s--> ",basename(currentdir));
-		fflush(stdout);   
-		if( fgets (line, LINE_BUFFER, stdin) != NULL)
-		{ 	
-			if (strlen(line) == LINE_BUFFER-1)
+		
+		//Build shell prompt
+		snprintf(prompt, sizeof(prompt), "%s@%s --> ", getenv("USER"), basename(currentdir));
+		
+		line = readline(prompt);
+		
+		if (strlen(line) == LINE_BUFFER-1)
+		{
+			print_error(101,'\0');
+			//Flush stdin buffer
+			int ch;
+			while((ch = getchar())!='\n'  && ch != EOF  );	
+		}
+		else if(*line != '\n')
+		{
+			add_history(line);
+			if(call_system(line) == EXIT_FAILURE)
 			{
-				print_error(101,'\0');
-				//Flush stdin buffer
-				int ch;
-				while((ch = getchar())!='\n'  && ch != EOF  );	
+				print_error(103,line);
 			}
-			
-			else if(*line != '\n')
-			{
-				if(call_system(line) == EXIT_FAILURE)
-				{
-					print_error(103,line);
-				}						
-			}	  								
-		}		          				
-     }
-     return EXIT_SUCCESS;
+			free(line);					
+		}	  									          				
+	}
+	return EXIT_SUCCESS;
 }
 
 int call_system(char *line){
 	
 	pid_t pid; 
-	
 	parse_line(line);
 	
 	if(strcmp(argv[0],"&") == 0)
@@ -83,6 +88,19 @@ int call_system(char *line){
 	{
 		chdir(argv[1]);
 		return EXIT_SUCCESS;
+	}
+	if(strcmp(argv[0],"source") == 0)
+	{
+		if(find_last_arg_index() > 1)
+		{
+			print_error(108,'\0');
+			return EXIT_FAILURE;
+		}
+		else
+		{
+			read_source(argv[1]);
+			return EXIT_SUCCESS;
+		}		
 	}
 	if ((pid = fork()) < 0) 
 	{          
@@ -114,6 +132,7 @@ int parse_line(char *line)
 {	
 	int i = 0;
 	char * pch;
+	clear_args();
 	if(*line == '"')
 	{
 		pch = strtok (line,"\"");
@@ -153,6 +172,12 @@ int parse_line(char *line)
 	{
 		back = 0;
 	}
+	//to fix a bug
+	if(strcmp(find_last_arg(),"") == 0)
+	{
+		argv[find_last_arg_index()] = NULL;
+	}
+	
 	
 	return EXIT_SUCCESS;
 }
@@ -163,6 +188,17 @@ char* white_skip(char* str)
 {
 	while (isspace(*str)) ++str;	
 	return str;
+}
+/* FUNCTION clear_args 									*/
+/* Clears all all the arguments						 	*/
+int clear_args()
+{
+	int len = sizeof(argv)/sizeof(int);
+	for (int i = 0; i < len; i++)
+	{
+		argv[i] = NULL;
+	}
+	return EXIT_SUCCESS;
 }
 
 /* FUNCTION find_last_arg					*/
@@ -190,6 +226,31 @@ int find_last_arg_index()
 	}
 	return 0;
 }
+/*FUNCTION read_line */
+
+int read_source(char *file)
+{
+	FILE * f;
+	char * fline = NULL;
+	size_t flen = 0;
+	ssize_t read;
+	f = fopen(file, "r");
+	if (f == NULL)
+	{
+		print_error(109,file);
+		return EXIT_FAILURE;
+	 }
+	
+	while ((read = getline(&fline, &flen, f)) != -1) 
+	{
+		if(call_system(fline) == EXIT_FAILURE)
+		{
+			print_error(103,fline);
+		}
+	}
+	free(fline);	
+	return EXIT_SUCCESS;
+}
 /* FUNCTION print_error                                                				*/
 /* 	The function will print the specified error.									*/
 /*	This is used for error handling. All errors will be defined here.				*/
@@ -204,7 +265,9 @@ int print_error(int errorNum, char *str)
 		case 105: fprintf(stderr,"ERROR %i: Execute failed, %s is an unknown command\n", errorNum,str); break;
 		case 106: fprintf(stderr,"ERROR %i: Unable to find current directory\n", errorNum); break;
 		case 107: fprintf(stderr,"ERROR %i: & cannot be first argument\n", errorNum); break;
-		case 108: fprintf(stderr,"ERROR %i: Define new error\n", errorNum); break;
+		case 108: fprintf(stderr,"ERROR %i: Source takes only one argument\n", errorNum); break;
+		case 109: fprintf(stderr,"ERROR %i: Define new error\n", errorNum); break;
+		case 110: fprintf(stderr,"ERROR %i: Define new error\n", errorNum); break;
 		default: fprintf(stderr,"ERROR: Unknown error\n"); return EXIT_FAILURE;
 	}
 	return EXIT_SUCCESS;
